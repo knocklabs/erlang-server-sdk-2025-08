@@ -146,7 +146,7 @@ do_listen(#{
             State;
         {ok, Pid} ->
             NewBackoff = ldclient_backoff:succeed(Backoff),
-            error_logger:info("[ldclient_update_stream_server] successfully established shotgun connection, now listening for silent failures~n"),
+            error_logger:info_msg("[ldclient_update_stream_server] successfully established shotgun connection, now listening for silent failures~n"),
             erlang:send_after(1000, self(), {check_shotgun_state}),
             State#{conn := Pid, backoff := NewBackoff}
         catch Code:Reason ->
