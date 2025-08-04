@@ -98,6 +98,9 @@ handle_info({timeout, _TimerRef, listen}, State) ->
     error_logger:info_msg("Reconnecting streaming connection...~n"),
     NewState = do_listen(State),
     {noreply, NewState};
+handle_info({check_shotgun_state}, #{conn := undefined} = State) ->
+    error_logger:warning_msg("[ldclient_update_stream_server] shotgun conn dropped after received DOWN event, nooping silent failure polling until reconnect is established~n"),
+    {noreply, State};
 handle_info({check_shotgun_state}, #{conn := ShotgunPid} = State) ->
     case sys:get_state(ShotgunPid) of
         {down, _} ->
