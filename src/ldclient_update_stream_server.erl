@@ -98,6 +98,19 @@ handle_info({timeout, _TimerRef, listen}, State) ->
     error_logger:info_msg("Reconnecting streaming connection...~n"),
     NewState = do_listen(State),
     {noreply, NewState};
+handle_info({check_shotgun_state}, #{conn := undefined} = State) ->
+    error_logger:warning_msg("[ldclient_update_stream_server] shotgun conn dropped after received DOWN event, nooping silent failure polling until reconnect is established~n"),
+    {noreply, State};
+handle_info({check_shotgun_state}, #{conn := ShotgunPid} = State) ->
+    case sys:get_state(ShotgunPid) of
+        {down, _} ->
+            error_logger:warning_msg("[ldclient_update_stream_server] shotgun in silent failure state, forcing reconnect~n"),
+            NewState = do_listen(State),
+            {noreply, NewState};
+        _ ->
+            erlang:send_after(1000, self(), {check_shotgun_state}),
+            {noreply, State}
+    end;
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -136,6 +149,8 @@ do_listen(#{
             State;
         {ok, Pid} ->
             NewBackoff = ldclient_backoff:succeed(Backoff),
+            error_logger:info_msg("[ldclient_update_stream_server] successfully established shotgun connection, now listening for silent failures~n"),
+            erlang:send_after(1000, self(), {check_shotgun_state}),
             State#{conn := Pid, backoff := NewBackoff}
         catch Code:Reason ->
             NewBackoff = do_listen_fail_backoff(Backoff, Code, Reason),
@@ -309,7 +324,7 @@ maybe_patch_item(FeatureStore, Tag, Bucket, Key, Item, ParseFunction) ->
 -spec maybe_delete_item(atom(), atom(), atom(), binary(), pos_integer()|undefined) -> ok.
 maybe_delete_item(FeatureStore, Tag, Bucket, Key, NewVersion) ->
     case FeatureStore:get(Tag, Bucket, Key) of
-        [] -> 
+        [] ->
             NewDeletedFlag = ldclient_flag:new(#{<<"key">> => Key, <<"deleted">> => true, <<"version">> => NewVersion}),
             NewItem = #{Key => NewDeletedFlag},
             FeatureStore:upsert(Tag, Bucket, NewItem);
